@@ -4,6 +4,8 @@ Block Building is a crucial aspect of Ethereum’s lifecycle consisting of vario
 
 This post will discuss how Ethereum Block Building has evolved along with the introduction of Proposer Builder Separation and future research.
 
+Thank you to [@mteam](https://x.com/mteamisloading), [@Gajpower](https://x.com/Gajpower) and [@unnawut](https://x.com/unnawut) for reviewing and providing suggestions. 
+
 ## Primer on Ethereum Block Building Components
 
 ### **Slots and Epochs**
@@ -15,7 +17,7 @@ Ethereum organizes time into discrete units:
 
 At the end of each epoch, validator duties are shuffled to ensure decentralization and security. Ethereum achieves economic finality after **2 epochs (~12.8 min)**, after which it is near impossible to revert the blocks.
 
-![image.png](attachment:350d2c06-e3c7-4609-ba2a-e5cc0b6dfb02:image.png)
+![Slot](./images/slot.png)
 
 ## **Committees**
 
@@ -41,11 +43,11 @@ Some points to keep in mind
 - The protocol adjusts the total number of committees in each epoch according to the number of active validators.
 - Current design is to have `64` Committees per slot i.e. `N=64`
 
-![image.png](attachment:0add156e-1ba4-462f-9487-886080ed1f5e:image.png)
+![Committee](./images/committee.png)
 
 ### **Proposer Lookahead**
 
-The beacon chain shuffling is designed to provide a minimum of **1 Epoch (32 slots)** lookahead on the validator's upcoming committee assignments for attesting dictated by the shuffling and slot. Note that this lookahead does not apply to proposing, which must be checked during the epoch in question.
+The beacon chain shuffling is designed to provide a minimum of **1 Epoch (32 slots)** lookahead on the validator's upcoming committee assignments for attesting dictated by the shuffling and slot. **Note** that this lookahead does not apply to proposing, which must be checked during the epoch in question.
 
 `get_committee_assignment` can be called at the start of each epoch to get the assignment for the next epoch (`current_epoch + 1`). This also allows validators to calculate the subnet id, join the respective committee and be prepared for their duties.
 
@@ -92,9 +94,8 @@ Before Ethereum’s transition to PBS, the proposer(formerly miners in PoW) had 
 
 This is somewhat loosely abstracted to simplify. But this was the general flow. This can be termed as ***Vanilla Block Building***
 
-![Vanilla Block Building Pipeline](attachment:3dc1502e-f748-4f51-b8f5-179548b5c009:image.png)
+![Vanilla Block Building Pipeline](./images/pre-pbs.png)
 
-Vanilla Block Building Pipeline
 
 ### **Problems With Pre-PBS Block Building**
 
@@ -124,17 +125,15 @@ To address the centralization risks and inefficiencies of validator-controlled b
 1. User submits transaction via JSON-RPC connected wallet.
 2. This transaction is submitted into the public mempool. All transactions are dumped here before they are picked up and validated. Recently, **Private Orderflows** have taken center stage with most big players opting for this since it is workaround to broadcasting your transactions to the public by using permissioned/private channels. Checkout the dashboard on [Dune](https://dune.com/dataalways/private-order-flow) for more insights.
 
-![Private Orderflow stats](attachment:ddb995c0-aa12-41e9-ba4e-7da272bcc119:image.png)
+![Private Orderflow stats](./images/private-orderflow.png)
 
-Private Orderflow stats
 
 1. **Searchers**  → who are external entities scanning the mempool continuously to find MEV opportunities(**more on this below**). They fetch the respective transactions and insert their own if and when necessary to make a profit. Then, the create a bundle of these transactions, the order of which must be maintained throughout in order for the Searcher to make a profit. Bundles are ordered transactions that must be executed atomically. Along with this bundle, they may add a transaction at the end of the bundle which denotes a “bribe” to the Builder. This bundle is sent to the Builder through the `eth_sendBundle` call.
     
-    Note: Searchers are external entities and influence transaction ordering but do not participate in block validation or consensus decisions.
+    **Note**: Searchers are external entities and influence transaction ordering but do not participate in block validation or consensus decisions.
     
-    ![Searcher-Builder communication](attachment:bf156a29-1b4c-47f6-8ad8-b1497ca1138e:image.png)
-    
-    Searcher-Builder communication
+    ![Searcher-Builder communication](./images/searcher-builder.png)
+
     
 2. **Builders** → The next entity is the Builder, who actually builds the block. They try to maximize both the fee revenue as well as MEV revenue. They include the bundled transactions sent by the Searchers(hopefully in order) and accept the payment(bribe) sent by the Searchers. Builders construct execution payloads using received transactions. They fill the blocks with:
     1. Bundles sent by the Searchers.
@@ -143,25 +142,22 @@ Private Orderflow stats
     
     They also set the field `feeRecipient` to their own address signifying that they will receive both the Searcher bribes as well as all the fees from the transactions in their submitted block. Builders submit a transaction at the end of their block which serves as a bribe to the proposer similar to what the Searcher did for the Builder.
     
-    Note: Builders are external entities and do not directly interact with the blockchain. 
+    **Note**: Builders are external entities and do not directly interact with the blockchain. 
     
-    ![Builder-Relay communication](attachment:aa007b3d-8276-4e2b-9eae-fdd45500527a:image.png)
+    ![Builder-Relay communication](./images/builder-relay.png)
     
-    Builder-Relay communication
     
-3. **Relays** → Builder market is a competitive market with various builders wanting to their payloads to get finalized so as to earn the fees. However, most blocks are built by a few well known Block Builders, namely B**eaverBuild** and **Titan.** To simplify this process for the actual Proposer, Relays are intermediary entities who validate the payloads sent by the  various Builders and choose the most one with maximum profit/bid. The Relay-Proposer communication uses a neat trick similar to a Commit and Reveal to ensure the Proposer does not cheat every entity till this point. More [here](https://www.notion.so/To-Block-Building-and-Beyond-1a21584f62b6803db849c62e3d8293b3?pvs=21).
+3. **Relays** → Builder market is a competitive market with various builders wanting to their payloads to get finalized so as to earn the fees. However, most blocks are built by a few well known Block Builders, namely **BeaverBuild** and **Titan.** To simplify this process for the actual Proposer, Relays are intermediary entities who validate the payloads sent by the  various Builders and choose the most one with maximum profit/bid. The Relay-Proposer communication uses a neat trick similar to a Commit and Reveal to ensure the Proposer does not cheat every entity till this point. More [here](#relay-proposer-communication).
 
-![Relay-Proposer communication](attachment:dd0a7d02-bd63-4c4b-878a-71d0c729c31c:image.png)
+![Relay-Proposer communication](./images/relay-proposer.png)
 
-Relay-Proposer communication
 
 # Putting it together
 
-![PBS Block Building Pipeline](attachment:a7306c2b-7b73-439e-8fd0-665d9e8ccac3:image.png)
+![PBS Block Building Pipeline](./images/post-pbs.png)
 
-PBS Block Building Pipeline
 
-# Relay ↔ Proposer Communication
+# Relay Proposer Communication
 
 It is entirely possible that on receiving the block payload, the proposer unwraps the block, inserts their own transactions and changes the ordering to their own liking as well as set the `feeRecipient`  to their own address. This would mean every single entity that worked on the block building process till now(Searcher → Builder → Relay) will be cheated or do “MEV stealing”. To prevent this, the Relay sends only the Header of the selected Block Payload. This happens when the proposer make the `eth_getPaylaodHeader` call. The Relay now sends a `PayloadHeader` which contains the hash of the body, the bid, and the signature of the builder. 
 
@@ -174,7 +170,7 @@ The proposer has 2 options at this point:
 
 Well, the proposer is required to sign the `PayloadHeader` for this exact reason. Before sending the Header, the Relay sends the `PayloadBody` to a `Escrow` for safekeeping. Once the Relay receives the signed `PayloadHeader` from the proposer, it verifies the signature and sends the `PayloadBody` stored in the escrow to the Proposer. Now, lets say the proposer does not include this Block. It builds its own block, ignoring the ordering done thus far. In this case, the signature will not match since the headers have changed. 
 
-Something to note:
+Something to **Note**:
 
 **It is a slashable offense to sign two different Headers for the same proposing slot.**
 
@@ -182,13 +178,12 @@ The Builder can now broadcast these conflicting Signed Headers to the network an
 
 ## What is stopping the Builders from censoring transactions?
 
-Well, nothing. The most common reason as to why Builders might censor a transaction is because it interacts with *OFAC addresses**.*** To simplify, OFAC address interacting transactions may have legal repercussions, which quite obviously nobody would want on their heads. ****
+Well, nothing. The most common reason as to why Builders might censor a transaction is because it interacts with **OFAC addresses**. _To simplify, OFAC address interacting transactions may have legal repercussions, which quite obviously nobody would want on their heads._
 
 According to [Censorship.pics](https://censorship.pics/) blocks built by Builders only include 0-7% OFAC sanctioned transactions.
 
-![Builder Censorship stats](attachment:783a55f1-3f77-4ae6-80ea-71da710089f7:newplot.png)
+![Builder Censorship stats](./images/builder-censorship.png)
 
-Builder Censorship stats
 
 ## How do we solve this?
 
@@ -198,7 +193,7 @@ One of the most well known solutions to transaction censoring as of writing this
 
 Inclusion Lists enforce that the transactions in the list must be included either in Block N or Block N+1, otherwise the N+1 block will be invalid. This is called ***Forward Inclusion Lists.*** 
 
-Note: There is also a notion for ***Spot Inclusion Lists*** which does IL for the current Block N itself. But this design had economic flaws leading to ***Forward Inclusion Lists.***
+**Note**: There is also a notion for ***Spot Inclusion Lists*** which does IL for the current Block N itself. But this design had economic flaws leading to ***Forward Inclusion Lists.***
 
 Of course, this design of ILs will not enable 100% Censorship Resistance, but there is active research ongoing to harden these proposals and many neat optimizations that can be applied to better the incentive structure.
 
@@ -208,7 +203,7 @@ Of course, this design of ILs will not enable 100% Censorship Resistance, but th
 
 FOCIL allows multiple Validators to provide suggestions on the Inclusion List for a specific slot. To be more precise, 16 Validators are chosen randomly at each slot to form an Inclusion List Committee. These members each form their own local IL and gossip it around to the network. The Proposer collects and aggregates available local inclusion lists into a final IL. The IL designs are lightweight since there is no need to rebuild the block to include these transactions; they can just be appended to the block. The condition for a Block to satisfy the IL validation requirement is **“*Block is valid if it contains all the transactions from all the ILs until the block is full”***
 
-Note: The IL committee members cannot guarantee any form of transaction ordering as the IL transactions can be included in any order. They only guarantee transaction inclusion.
+**Note**: The IL committee members cannot guarantee any form of transaction ordering as the IL transactions can be included in any order. They only guarantee transaction inclusion.
 
 ## **Benefits of PBS for MEV Management**
 
